@@ -1,4 +1,4 @@
-//
+	//
 //                Apache License, Version 2.0
 //
 //  Copyright 2017, Markus Wanke
@@ -16,10 +16,10 @@
 //  limitations under the License.
 //
 
-/// # OhhAuth
-/// ## Pure Swift implementation of the OAuth 1.0 protocol as an easy to use extension for the URLRequest type.
-/// - Author: Markus Wanke
-/// - Copyright: 2017
+// # OhhAuth
+// ## Pure Swift implementation of the OAuth 1.0 protocol as an easy to use extension for the URLRequest type.
+// - Author: Markus Wanke
+// - Copyright: 2017
 
 import Foundation
 
@@ -81,8 +81,9 @@ public class OhhAuth
             .joined(separator: "&")
         
         /// [RFC-5849 Section 3.4.2](https://tools.ietf.org/html/rfc5849#section-3.4.2)
-        let binarySignature = HMAC.calculate(withHash: .sha1, key: signingKey, message: signatureBase)
-        oAuthParameters["oauth_signature"] = binarySignature.base64EncodedString()
+        let binarySignature = HMAC.sha1(key: signingKey.data(using: String.Encoding.utf8)!, message: signatureBase.data(using: String.Encoding.utf8)!)
+        //HMAC.calculate(withHash: .sha1, key: signingKey, message: signatureBase)
+        oAuthParameters["oauth_signature"] = binarySignature!.base64EncodedString()
         
         /// [RFC-5849 Section 3.5.1](https://tools.ietf.org/html/rfc5849#section-3.5.1)
         return "OAuth " + oAuthParameters
@@ -92,6 +93,50 @@ public class OhhAuth
             .joined(separator: ",")
     }
     
+       static func calculateSignatureParameters(url: URL, method: String, parameter: [String: String],
+        consumerCredentials cc: Credentials, userCredentials uc: Credentials?) -> [String: String]
+    {
+        typealias Tup = (key: String, value: String)
+        
+        let tuplify: (String, String) -> Tup = {
+            return (key: rfc3986encode($0), value: rfc3986encode($1))
+        }
+        let cmp: (Tup, Tup) -> Bool = {
+            return $0.key < $1.key
+        }
+        let toPairString: (Tup) -> String = {
+            return $0.key + "=" + $0.value
+        }
+        
+        /// [RFC-5849 Section 3.1](https://tools.ietf.org/html/rfc5849#section-3.1)
+        var oAuthParameters = oAuthDefaultParameters(consumerKey: cc.key, userKey: uc?.key)
+        
+        /// [RFC-5849 Section 3.4.1.3.1](https://tools.ietf.org/html/rfc5849#section-3.4.1.3.1)
+        let signString: String = [oAuthParameters, parameter, url.queryParameters()]
+            .flatMap { $0.map(tuplify) }
+            .sorted(by: cmp)
+            .map(toPairString)
+            .joined(separator: "&")
+        
+        
+        /// [RFC-5849 Section 3.4.1](https://tools.ietf.org/html/rfc5849#section-3.4.1)
+        let signatureBase: String = [method, url.oAuthBaseURL(), signString]
+            .map(rfc3986encode)
+            .joined(separator: "&")
+        
+        /// [RFC-5849 Section 3.4.2](https://tools.ietf.org/html/rfc5849#section-3.4.2)
+        let signingKey: String = [cc.secret, uc?.secret ?? ""]
+            .map(rfc3986encode)
+            .joined(separator: "&")
+        
+        /// [RFC-5849 Section 3.4.2](https://tools.ietf.org/html/rfc5849#section-3.4.2)
+        //let binarySignature = HMAC.calculate(withHash: .sha1, key: signingKey, message: signatureBase)
+        let binarySignature = HMAC.sha1(key: signingKey.data(using: String.Encoding.utf8)!, message: signatureBase.data(using: String.Encoding.utf8)!)
+        oAuthParameters["oauth_signature"] = binarySignature!.base64EncodedString()
+        
+        /// [RFC-5849 Section 3.5.1](https://tools.ietf.org/html/rfc5849#section-3.5.1)
+        return oAuthParameters
+    }
 
     
     /// Function to perform the right percentage encoding for url form parameters.
@@ -201,73 +246,29 @@ public extension URLRequest
         
         self.addValue(sig, forHTTPHeaderField: "Authorization")
     }
-}
-
-
-
-/// Hash-based message authentication helper class.
-fileprivate class HMAC
-{
-    enum HashMethod: UInt32
+    
+     mutating func oAuthSignWithQueryParameters(method: String, body: Data? = nil, contentType: String? = nil,
+        consumerCredentials cc: OhhAuth.Credentials, userCredentials uc: OhhAuth.Credentials? = nil)
     {
-        /// See <CommonCrypto/CommonHMAC.h>
-        case sha1, md5, sha256, sha384, sha512, sha224
+        self.httpMethod = method.uppercased()
         
-        var length: Int {
-            switch self {
-                case .md5:     return 16
-                case .sha1:    return 20
-                case .sha224:  return 28
-                case .sha256:  return 32
-                case .sha384:  return 48
-                case .sha512:  return 64
-            }
+        if let body = body {
+            self.httpBody = body
+            self.addValue(String(body.count), forHTTPHeaderField: "Content-Length")
         }
-    }
-    
-    
-    /// Function to calculate a hash-based message authentication code (aka HMAC)
-    ///
-    /// - Parameters:
-    ///   - withHash: hash function used (one of: .sha1, .md5, .sha256, .sha384, .sha512, .sha224)
-    ///   - key: the key
-    ///   - message: the message
-    /// - Returns: the HMAC
-    static func calculate(withHash hash: HashMethod, key: String, message msg: String) -> Data
-    {
-        let mac = UnsafeMutablePointer<CUnsignedChar>.allocate(capacity: hash.length)
-        let keyLen = CUnsignedLong(key.lengthOfBytes(using: .utf8))
-        let msgLen = CUnsignedLong(msg.lengthOfBytes(using: .utf8))
-        hmac(hash.rawValue, key, keyLen, msg, msgLen, mac)
-        return Data(bytesNoCopy: mac, count: hash.length, deallocator: .free)
-    }
-    
-    
-    private static let hmac: CCHmacFuncPtr = loadHMACfromCommonCrypto()
-    
-    // see <CommonCrypto/CommonHMAC.h>
-    private typealias CCHmacFuncPtr = @convention(c) (
-        _ algorithm:  CUnsignedInt,
-        _ key:        UnsafePointer<CUnsignedChar>,
-        _ keyLength:  CUnsignedLong,
-        _ data:       UnsafePointer<CUnsignedChar>,
-        _ dataLength: CUnsignedLong,
-        _ macOut:     UnsafeMutablePointer<CUnsignedChar>
-    ) -> Void
-    
-    /// Just a `import CommonCrypto` would be great, but unfortunately this is still not possible.
-    /// So we use the only other sane method at this time to get access to CommonCrypto.
-    /// (Note: Since this is a lib, bridging headers are not supported.
-    /// Also modulemap files are error prone due to non relative file paths.)
-    ///
-    /// - Returns: A function pointer to CCHmac from libcommonCrypto
-    private static func loadHMACfromCommonCrypto() -> CCHmacFuncPtr
-    {
-        let libcc = dlopen("/usr/lib/system/libcommonCrypto.dylib", RTLD_NOW)
-        return unsafeBitCast(dlsym(libcc, "CCHmac"), to: CCHmacFuncPtr.self)
+        
+        if let ct = contentType {
+            self.addValue(ct, forHTTPHeaderField: "Content-Type")
+        }
+        
+        let sigParms = OhhAuth.calculateSignatureParameters(url: self.url!, method: self.httpMethod!,
+                      parameter: [:], consumerCredentials: cc, userCredentials: uc)
+        
+        var urlCom = URLComponents(url: self.url!, resolvingAgainstBaseURL: true)
+        urlCom!.queryItems = sigParms.map{ URLQueryItem(name: $0.0, value: $0.1)}
+        self.url = urlCom!.url
     }
 }
-
 
 fileprivate extension URL
 {
@@ -306,6 +307,5 @@ fileprivate extension URL
         return scheme + "://" + authority + host + port + self.path
     }
 }
-
 
 

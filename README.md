@@ -1,4 +1,6 @@
-# OhhAuth
+# OhhAuthScade
+This is a fork of the OhhAuth library. It's removing the dependency of having to use iOS specific library libcommonCrypto and replacing it with a pure Swift sha1 implementation from Dongri Jin 
+
 ### Pure Swift implementation of the OAuth 1.0 protocol as an easy to use extension for the URLRequest type. [(RFC-5849)](https://tools.ietf.org/html/rfc5849])
 
 Even though its successor is already specified, the OAuth 1.0 protocol is still in wide use. This easy to use extension for the `URLRequest` type implements the most common OAuth client side request variants.
