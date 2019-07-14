@@ -3,11 +3,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "OhhAuth",
+    name: "OhhAuthScade",
     products: [
-        .library(name: "OhhAuth", targets: ["OhhAuth"])
+        .library(name: "OhhAuthScade", targets: ["OhhAuthScade"])
     ],
     targets: [
-        .target(name: "OhhAuth", path: ".")
+        .target(name: "OhhAuthScade", path: ".")
     ]
 )
